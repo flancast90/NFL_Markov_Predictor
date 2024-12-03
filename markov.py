@@ -127,21 +127,21 @@ class HMM:
         seq_len = len(self.observation_sequence)
         beta = [[0.0] * seq_len for _ in range(self.num_states)]
 
-        if start_idx == seq_len - 1:
-            for state in range(self.num_states):
-                beta[state][start_idx] = self.transition_matrix[self.num_states + 1][
-                    state + 1
-                ]
-            return beta
-
-        beta = self.backward_recurse(start_idx + 1)
+        # Initialize final values
         for state in range(self.num_states):
-            if start_idx >= 0:
-                beta[state][start_idx] = self.compute_beta(start_idx, beta, state)
-            if start_idx == 0:
-                self.beta_final[state] = self.compute_beta(
-                    start_idx, beta, 0, is_final=True
-                )
+            beta[state][seq_len - 1] = self.transition_matrix[self.num_states + 1][
+                state + 1
+            ]
+
+        # Iterate backwards
+        for t in range(seq_len - 2, -1, -1):
+            for state in range(self.num_states):
+                beta[state][t] = self.compute_beta(t, beta, state)
+                if t == 0:
+                    self.beta_final[state] = self.compute_beta(
+                        t, beta, 0, is_final=True
+                    )
+
         return beta
 
     def compute_beta(self, time_idx, beta_matrix, state, is_final=False):
