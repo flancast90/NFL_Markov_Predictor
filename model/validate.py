@@ -3,6 +3,8 @@ import numpy as np
 from datetime import datetime
 from markov import HMM
 
+strategy: str = "tail"  # Can be either "tail" or "fade"
+
 
 class ModelValidator:
     def __init__(self):
@@ -10,6 +12,14 @@ class ModelValidator:
         self.states = None
         self.observations = None
         self.validation_data = None
+
+    def __american_to_decimal(self, american_odds: int) -> float:
+        """Convert American odds to decimal odds"""
+        american_odds = int(american_odds)
+        if american_odds > 0:
+            return american_odds / 100 + 1
+        else:
+            return 1 - (100 / american_odds)
 
     def load_model(self, model_file: str = "model/saves/trained_model.json"):
         """Load trained model parameters"""
@@ -68,6 +78,8 @@ class ModelValidator:
         total_predictions = len(self.validation_data)
         predictions = []
         actuals = []
+        total_profit = 0
+        bets = 0
 
         for game in self.validation_data:
             # Get actual observation
@@ -79,17 +91,41 @@ class ModelValidator:
             # Make prediction using likelihood comparison
             home_likelihood = self.hmm.likelihood([observation])
             away_likelihood = self.hmm.likelihood([observation])
-            predicted_state = (
+
+            # Base prediction on likelihoods and strategy
+            model_prediction = (
                 "home_win" if home_likelihood > away_likelihood else "away_win"
+            )
+            predicted_state = (
+                model_prediction
+                if strategy == "tail"
+                else ("away_win" if model_prediction == "home_win" else "home_win")
             )
 
             predictions.append(predicted_state)
             actuals.append(actual_state)
 
+            # Calculate profit
+            if predicted_state == "home_win":
+                odds = self.__american_to_decimal(game["home_ml"])
+                if actual_state == "home_win":
+                    total_profit += odds - 1
+                else:
+                    total_profit -= 1
+                bets += 1
+            else:  # predicted away win
+                odds = self.__american_to_decimal(game["away_ml"])
+                if actual_state == "away_win":
+                    total_profit += odds - 1
+                else:
+                    total_profit -= 1
+                bets += 1
+
             if predicted_state == actual_state:
                 correct_predictions += 1
 
         accuracy = correct_predictions / total_predictions
+        roi = (total_profit / bets) * 100 if bets > 0 else 0
 
         # Calculate confusion matrix
         confusion_matrix = np.zeros((2, 2))
@@ -101,11 +137,13 @@ class ModelValidator:
         # Save results
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         with open(f"results/results_{timestamp}.txt", "w") as f:
-            f.write("Model Validation Results\n")
+            f.write(f"Model Validation Results -> {strategy}ing strategy\n")
             f.write("=======================\n\n")
             f.write(f"Total predictions: {total_predictions}\n")
             f.write(f"Correct predictions: {correct_predictions}\n")
-            f.write(f"Accuracy: {accuracy:.4f}\n\n")
+            f.write(f"Accuracy: {accuracy:.4f}\n")
+            f.write(f"Total profit: {total_profit:.2f} units\n")
+            f.write(f"ROI: {roi:.2f}%\n\n")
 
             f.write("Confusion Matrix\n")
             f.write("---------------\n")
@@ -143,4 +181,4 @@ class ModelValidator:
             f.write(f"Recall: {recall:.4f}\n")
             f.write(f"F1 Score: {f1_score:.4f}\n")
 
-        return accuracy, confusion_matrix
+        return accuracy, confusion_matrix, total_profit, roi

@@ -36,7 +36,7 @@ def main():
         validator = ModelValidator()
         validator.load_model()
         validator.load_validation_data()
-        accuracy, confusion_matrix = validator.validate()
+        accuracy, confusion_matrix, total_profit, roi = validator.validate()
         print(f"Model validation complete. Accuracy: {accuracy:.4f}")
 
 

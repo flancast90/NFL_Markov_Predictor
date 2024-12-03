@@ -34,6 +34,10 @@ class ModelProcessor:
                 for game in data
                 if game.get("home_score") is not None
                 and game.get("away_score") is not None
+                and game.get("home_ml") is not None
+                and game.get("away_ml") is not None
+                and game.get("home_ml") != "NA"
+                and game.get("away_ml") != "NA"
             ]
 
     def get_game_result(self, home_score: int, away_score: int) -> str:
