@@ -161,27 +161,30 @@ class HMM:
         return sum(probabilities)
 
     def forward_recurse(self, end_idx):
-        if end_idx == 0:
-            alpha = [
-                [0.0] * len(self.observation_sequence) for _ in range(self.num_states)
-            ]
-            for state in range(self.num_states):
-                observation = self.observation_sequence[0]
-                initial_prob = self.transition_matrix[state + 1][0]
-                emission_prob = self.emission_matrix[self.observation_map[observation]][
-                    state
-                ]
-                alpha[state][0] = initial_prob * emission_prob
-            return alpha
+        seq_len = len(self.observation_sequence)
+        alpha = [[0.0] * seq_len for _ in range(self.num_states)]
 
-        alpha = self.forward_recurse(end_idx - 1)
+        # Initialize first values
         for state in range(self.num_states):
-            if end_idx != len(self.observation_sequence):
-                alpha[state][end_idx] = self.compute_alpha(end_idx, alpha, state)
-            else:
+            observation = self.observation_sequence[0]
+            initial_prob = self.transition_matrix[state + 1][0]
+            emission_prob = self.emission_matrix[self.observation_map[observation]][
+                state
+            ]
+            alpha[state][0] = initial_prob * emission_prob
+
+        # Iterate forward
+        for t in range(1, seq_len):
+            for state in range(self.num_states):
+                alpha[state][t] = self.compute_alpha(t, alpha, state)
+
+        # Compute final values if needed
+        if end_idx == seq_len:
+            for state in range(self.num_states):
                 self.alpha_final[state] = self.compute_alpha(
                     end_idx, alpha, state, is_final=True
                 )
+
         return alpha
 
     def compute_alpha(self, time_idx, alpha_matrix, curr_state, is_final=False):
