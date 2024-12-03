@@ -1,4 +1,3 @@
-import copy
 import numpy as np
 
 
@@ -60,7 +59,8 @@ class HMM:
             )
             for state in range(2):
                 numerator = self.alpha_matrix[state][t] * self.beta_matrix[state][t]
-                self.gamma_matrix[t][state] = numerator / denominator
+                # Add small epsilon to avoid division by zero
+                self.gamma_matrix[t][state] = numerator / (denominator + 1e-10)
 
     def compute_xi(self):
         for t in range(1, len(self.observation_sequence)):
@@ -81,14 +81,16 @@ class HMM:
             self.alpha_matrix[s][time - 1] * self.beta_matrix[s][time - 1]
             for s in range(2)
         )
-        return (alpha * transition * beta * emission) / denominator
+        # Add small epsilon to avoid division by zero
+        return (alpha * transition * beta * emission) / (denominator + 1e-10)
 
     def maximization(self):
         self.compute_state_probabilities()
         for state in range(self.num_states):
             self.transition_matrix[state + 1][0] = self.gamma_matrix[0][state]
-            self.transition_matrix[-1][state + 1] = (
-                self.gamma_matrix[-1][state] / self.state_probabilities[state]
+            # Add small epsilon to avoid division by zero
+            self.transition_matrix[-1][state + 1] = self.gamma_matrix[-1][state] / (
+                self.state_probabilities[state] + 1e-10
             )
 
             for next_state in range(self.num_states):
@@ -108,9 +110,9 @@ class HMM:
         ]
 
     def estimate_transition_probability(self, from_state, to_state):
-        return (
-            sum(self.xi_matrix[from_state][to_state])
-            / self.state_probabilities[from_state]
+        # Add small epsilon to avoid division by zero
+        return sum(self.xi_matrix[from_state][to_state]) / (
+            self.state_probabilities[from_state] + 1e-10
         )
 
     def estimate_emission_probability(self, state, observation_idx):
@@ -118,30 +120,30 @@ class HMM:
         matching_times = [
             t for t, obs in enumerate(self.observation_sequence) if obs == observation
         ]
-        return (
-            sum(self.gamma_matrix[t][state] for t in matching_times)
-            / self.state_probabilities[state]
+        # Add small epsilon to avoid division by zero
+        return sum(self.gamma_matrix[t][state] for t in matching_times) / (
+            self.state_probabilities[state] + 1e-10
         )
 
     def backward_recurse(self, start_idx):
         seq_len = len(self.observation_sequence)
         beta = [[0.0] * seq_len for _ in range(self.num_states)]
 
-        if start_idx == seq_len - 1:
-            for state in range(self.num_states):
-                beta[state][start_idx] = self.transition_matrix[self.num_states + 1][
-                    state + 1
-                ]
-            return beta
-
-        beta = self.backward_recurse(start_idx + 1)
+        # Initialize final values
         for state in range(self.num_states):
-            if start_idx >= 0:
-                beta[state][start_idx] = self.compute_beta(start_idx, beta, state)
-            if start_idx == 0:
-                self.beta_final[state] = self.compute_beta(
-                    start_idx, beta, 0, is_final=True
-                )
+            beta[state][seq_len - 1] = self.transition_matrix[self.num_states + 1][
+                state + 1
+            ]
+
+        # Iterate backwards
+        for t in range(seq_len - 2, -1, -1):
+            for state in range(self.num_states):
+                beta[state][t] = self.compute_beta(t, beta, state)
+                if t == 0:
+                    self.beta_final[state] = self.compute_beta(
+                        t, beta, 0, is_final=True
+                    )
+
         return beta
 
     def compute_beta(self, time_idx, beta_matrix, state, is_final=False):
@@ -161,27 +163,30 @@ class HMM:
         return sum(probabilities)
 
     def forward_recurse(self, end_idx):
-        if end_idx == 0:
-            alpha = [
-                [0.0] * len(self.observation_sequence) for _ in range(self.num_states)
-            ]
-            for state in range(self.num_states):
-                observation = self.observation_sequence[0]
-                initial_prob = self.transition_matrix[state + 1][0]
-                emission_prob = self.emission_matrix[self.observation_map[observation]][
-                    state
-                ]
-                alpha[state][0] = initial_prob * emission_prob
-            return alpha
+        seq_len = len(self.observation_sequence)
+        alpha = [[0.0] * seq_len for _ in range(self.num_states)]
 
-        alpha = self.forward_recurse(end_idx - 1)
+        # Initialize first values
         for state in range(self.num_states):
-            if end_idx != len(self.observation_sequence):
-                alpha[state][end_idx] = self.compute_alpha(end_idx, alpha, state)
-            else:
+            observation = self.observation_sequence[0]
+            initial_prob = self.transition_matrix[state + 1][0]
+            emission_prob = self.emission_matrix[self.observation_map[observation]][
+                state
+            ]
+            alpha[state][0] = initial_prob * emission_prob
+
+        # Iterate forward
+        for t in range(1, seq_len):
+            for state in range(self.num_states):
+                alpha[state][t] = self.compute_alpha(t, alpha, state)
+
+        # Compute final values if needed
+        if end_idx == seq_len:
+            for state in range(self.num_states):
                 self.alpha_final[state] = self.compute_alpha(
                     end_idx, alpha, state, is_final=True
                 )
+
         return alpha
 
     def compute_alpha(self, time_idx, alpha_matrix, curr_state, is_final=False):
