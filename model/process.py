@@ -6,13 +6,14 @@ import random
 
 class ModelProcessor:
     def __init__(self):
-        self.states = ["home_win", "away_win", "draw"]
+        self.states = ["home_win", "away_win"]
         self.observations = [
-            "home+large",
-            "home+small",
-            "draw",
-            "away+small",
-            "away+large",
+            "big_win",
+            "win",
+            "close_win",
+            "close_loss",
+            "loss",
+            "big_loss",
         ]
         self.state_to_index = {state: i for i, state in enumerate(self.states)}
         self.obs_to_index = {obs: i for i, obs in enumerate(self.observations)}
@@ -38,72 +39,78 @@ class ModelProcessor:
     def get_game_result(self, home_score: int, away_score: int) -> str:
         if home_score > away_score:
             return "home_win"
-        elif away_score > home_score:
+        else:
             return "away_win"
-        return "draw"
 
     def get_point_difference_observation(self, home_score: int, away_score: int) -> str:
-        diff = home_score - away_score
-        if diff >= 10:
-            return "home+large"
-        elif diff > 0:
-            return "home+small"
-        elif diff == 0:
-            return "draw"
-        elif diff > -10:
-            return "away+small"
+        point_diff = home_score - away_score
+
+        if point_diff > 14:
+            obs = "big_win"
+        elif point_diff > 7:
+            obs = "win"
+        elif point_diff > 0:
+            obs = "close_win"
+        elif point_diff > -7:
+            obs = "close_loss"
+        elif point_diff > -14:
+            obs = "loss"
         else:
-            return "away+large"
+            obs = "big_loss"
+
+        return obs
 
     def compute_matrices(self, games: List[Dict]):
-        # Reset matrices
-        self.transition_matrix.fill(0)
-        self.emission_matrix.fill(0)
+        # Initialize matrices with small values
+        self.transition_matrix = np.full((len(self.states), len(self.states)), 1e-10)
+        self.emission_matrix = np.full(
+            (len(self.observations), len(self.states)), 1e-10
+        )
 
-        # Process games to get sequences
-        game_states = []
-        game_observations = []
+        # Count occurrences for transitions and emissions
+        state_counts = {state: 0 for state in self.states}
 
-        for game in games:
-            state = self.get_game_result(game["home_score"], game["away_score"])
-            observation = self.get_point_difference_observation(
-                game["home_score"], game["away_score"]
+        for i in range(len(games)):
+            current_game = games[i]
+            current_state = self.get_game_result(
+                current_game["home_score"], current_game["away_score"]
+            )
+            current_obs = self.get_point_difference_observation(
+                current_game["home_score"], current_game["away_score"]
             )
 
-            game_states.append(state)
-            game_observations.append(observation)
+            # Update state counts
+            state_counts[current_state] += 1
 
-        # Compute transition matrix
-        for i in range(len(game_states) - 1):
-            curr_state = game_states[i]
-            next_state = game_states[i + 1]
-            self.transition_matrix[
-                self.state_to_index[curr_state], self.state_to_index[next_state]
-            ] += 1
+            # Update emission matrix
+            state_idx = self.state_to_index[current_state]
+            obs_idx = self.obs_to_index[current_obs]
+            self.emission_matrix[obs_idx][state_idx] += 1
 
-        # Normalize transition matrix
-        row_sums = self.transition_matrix.sum(axis=1, keepdims=True)
-        self.transition_matrix = np.divide(
-            self.transition_matrix,
-            row_sums,
-            out=np.zeros_like(self.transition_matrix),
-            where=row_sums != 0,
-        )
+            # Update transition matrix if not last game
+            if i < len(games) - 1:
+                next_game = games[i + 1]
+                next_state = self.get_game_result(
+                    next_game["home_score"], next_game["away_score"]
+                )
+                self.transition_matrix[self.state_to_index[current_state]][
+                    self.state_to_index[next_state]
+                ] += 1
 
-        # Compute emission matrix
-        for state, obs in zip(game_states, game_observations):
-            self.emission_matrix[
-                self.obs_to_index[obs], self.state_to_index[state]
-            ] += 1
+        # Normalize matrices
+        # Normalize transition matrix (row-wise)
+        for i in range(len(self.states)):
+            row_sum = np.sum(self.transition_matrix[i])
+            if row_sum > 0:
+                self.transition_matrix[i] = self.transition_matrix[i] / row_sum
 
-        # Normalize emission matrix
-        col_sums = self.emission_matrix.sum(axis=0, keepdims=True)
-        self.emission_matrix = np.divide(
-            self.emission_matrix,
-            col_sums,
-            out=np.zeros_like(self.emission_matrix),
-            where=col_sums != 0,
-        )
+        # Normalize emission matrix (column-wise)
+        for j in range(len(self.states)):
+            state = self.states[j]
+            if state_counts[state] > 0:
+                self.emission_matrix[:, j] = (
+                    self.emission_matrix[:, j] / state_counts[state]
+                )
 
     def split_data(self, data: List[Dict], train_ratio: float = 0.7):
         random.shuffle(data)
