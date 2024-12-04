@@ -3,9 +3,19 @@ import numpy as np
 
 
 class HMM:
-    def __init__(self, transition_matrix, emission_matrix, observation_labels=None):
-        self.transition_matrix = np.log(transition_matrix + 1e-300)
-        self.emission_matrix = np.log(emission_matrix + 1e-300)
+    def __init__(
+        self,
+        transition_matrix,
+        emission_matrix,
+        observation_labels=None,
+        matrices_are_log=False,
+    ):
+        if matrices_are_log:
+            self.transition_matrix = transition_matrix
+            self.emission_matrix = emission_matrix
+        else:
+            self.transition_matrix = np.log(transition_matrix + 1e-300)
+            self.emission_matrix = np.log(emission_matrix + 1e-300)
         self.num_states = self.emission_matrix.shape[1]
         self.num_observations = self.emission_matrix.shape[0]
         self.observation_sequence = None

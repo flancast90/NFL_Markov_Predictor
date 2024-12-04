@@ -59,10 +59,10 @@ class ModelProcessor:
 
     def compute_matrices(self, games: List[Dict]):
         self.transition_matrix = np.full(
-            (len(self.states) + 2, len(self.states) + 2), 1e-10
+            (len(self.states) + 2, len(self.states) + 2), 0.1667
         )
         self.emission_matrix = np.full(
-            (len(self.observations), len(self.states)), 1e-10
+            (len(self.observations), len(self.states)), 0.1667
         )
 
         state_counts = {state: 0 for state in self.states}

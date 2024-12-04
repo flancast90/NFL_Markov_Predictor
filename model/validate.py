@@ -3,7 +3,7 @@ import numpy as np
 from datetime import datetime
 from markov import HMM
 
-strategy: str = "fade"  # Can be either "tail" or "fade"
+strategy: str = "tail"  # Can be either "tail" or "fade"
 
 
 class ModelValidator:
@@ -41,6 +41,7 @@ class ModelValidator:
             transition_matrix=padded_transition,
             emission_matrix=emission_matrix,
             observation_labels=self.observations,
+            matrices_are_log=True,
         )
 
     def load_validation_data(self, validation_file: str = "data/validation_set.json"):
@@ -63,6 +64,29 @@ class ModelValidator:
         else:
             return "big_loss"
 
+    def predict(self, observation: str) -> str:
+        """Predict winner based on observation."""
+        if self.hmm is None:
+            raise ValueError("Must load model before predicting")
+
+        obs_idx = self.observations.index(observation)
+        home_state_idx = self.states.index("home_win")
+        away_state_idx = self.states.index("away_win")
+
+        # The emission matrix is shaped (n_observations, n_states)
+        home_likelihood = self.hmm.emission_matrix[obs_idx][home_state_idx]
+        away_likelihood = self.hmm.emission_matrix[obs_idx][away_state_idx]
+        print(home_likelihood, away_likelihood)
+
+        model_prediction = (
+            "home_win" if home_likelihood > away_likelihood else "away_win"
+        )
+        return (
+            model_prediction
+            if strategy == "tail"
+            else ("away_win" if model_prediction == "home_win" else "home_win")
+        )
+
     def validate(self):
         if self.hmm is None or self.validation_data is None:
             raise ValueError("Must load model and validation data before validating")
@@ -80,18 +104,7 @@ class ModelValidator:
                 "home_win" if game["home_score"] > game["away_score"] else "away_win"
             )
 
-            home_likelihood = self.hmm.likelihood([observation])
-            away_likelihood = self.hmm.likelihood([observation])
-
-            model_prediction = (
-                "home_win" if home_likelihood > away_likelihood else "away_win"
-            )
-            predicted_state = (
-                model_prediction
-                if strategy == "tail"
-                else ("away_win" if model_prediction == "home_win" else "home_win")
-            )
-
+            predicted_state = self.predict(observation)
             predictions.append(predicted_state)
             actuals.append(actual_state)
 
