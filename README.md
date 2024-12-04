@@ -6,7 +6,12 @@ This program takes in a given dataset of sports game outcomes and uses it to tra
 
 ## Installation
 
-todo add this
+Download the file, as well as Python 3.12.7. In addition, you will need to install the following libraries, either to PATH or to the same folder as your program:
+* Streamlit
+* Graphviz
+* Numpy
+* Pandas
+* Plotly
 
 ## Usage (Command Line)
 
