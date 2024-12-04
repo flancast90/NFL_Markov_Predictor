@@ -19,7 +19,7 @@ class ModelProcessor:
         self.obs_to_index = {obs: i for i, obs in enumerate(self.observations)}
 
         # Initialize matrices
-        self.transition_matrix = np.zeros((len(self.states), len(self.states)))
+        self.transition_matrix = np.zeros((len(self.states) + 2, len(self.states) + 2))
         self.emission_matrix = np.zeros((len(self.observations), len(self.states)))
 
         self.train_data = []
@@ -28,7 +28,6 @@ class ModelProcessor:
     def load_data(self, filepath: str) -> List[Dict]:
         with open(filepath, "r") as f:
             data = json.load(f)
-            # Filter out games with missing/None scores
             return [
                 game
                 for game in data
@@ -41,37 +40,31 @@ class ModelProcessor:
             ]
 
     def get_game_result(self, home_score: int, away_score: int) -> str:
-        if home_score > away_score:
-            return "home_win"
-        else:
-            return "away_win"
+        return "home_win" if home_score > away_score else "away_win"
 
     def get_point_difference_observation(self, home_score: int, away_score: int) -> str:
         point_diff = home_score - away_score
-
         if point_diff > 14:
-            obs = "big_win"
+            return "big_win"
         elif point_diff > 7:
-            obs = "win"
+            return "win"
         elif point_diff > 0:
-            obs = "close_win"
+            return "close_win"
         elif point_diff > -7:
-            obs = "close_loss"
+            return "close_loss"
         elif point_diff > -14:
-            obs = "loss"
+            return "loss"
         else:
-            obs = "big_loss"
-
-        return obs
+            return "big_loss"
 
     def compute_matrices(self, games: List[Dict]):
-        # Initialize matrices with small values
-        self.transition_matrix = np.full((len(self.states), len(self.states)), 1e-10)
+        self.transition_matrix = np.full(
+            (len(self.states) + 2, len(self.states) + 2), 0.1667
+        )
         self.emission_matrix = np.full(
-            (len(self.observations), len(self.states)), 1e-10
+            (len(self.observations), len(self.states)), 0.1667
         )
 
-        # Count occurrences for transitions and emissions
         state_counts = {state: 0 for state in self.states}
 
         for i in range(len(games)):
@@ -83,38 +76,35 @@ class ModelProcessor:
                 current_game["home_score"], current_game["away_score"]
             )
 
-            # Update state counts
             state_counts[current_state] += 1
 
-            # Update emission matrix
-            state_idx = self.state_to_index[current_state]
+            state_idx = self.state_to_index[current_state] + 1  # +1 for start state
             obs_idx = self.obs_to_index[current_obs]
-            self.emission_matrix[obs_idx][state_idx] += 1
+            self.emission_matrix[obs_idx][state_idx - 1] += 1
 
-            # Update transition matrix if not last game
-            if i < len(games) - 1:
+            if i == 0:
+                self.transition_matrix[state_idx][0] += 1
+            elif i == len(games) - 1:
+                self.transition_matrix[-1][state_idx] += 1
+            else:
                 next_game = games[i + 1]
                 next_state = self.get_game_result(
                     next_game["home_score"], next_game["away_score"]
                 )
-                self.transition_matrix[self.state_to_index[current_state]][
-                    self.state_to_index[next_state]
+                self.transition_matrix[self.state_to_index[next_state] + 1][
+                    state_idx
                 ] += 1
 
         # Normalize matrices
-        # Normalize transition matrix (row-wise)
-        for i in range(len(self.states)):
-            row_sum = np.sum(self.transition_matrix[i])
-            if row_sum > 0:
-                self.transition_matrix[i] = self.transition_matrix[i] / row_sum
+        for j in range(len(self.states) + 2):
+            col_sum = np.sum(self.transition_matrix[:, j])
+            if col_sum > 0:
+                self.transition_matrix[:, j] = self.transition_matrix[:, j] / col_sum
 
-        # Normalize emission matrix (column-wise)
         for j in range(len(self.states)):
-            state = self.states[j]
-            if state_counts[state] > 0:
-                self.emission_matrix[:, j] = (
-                    self.emission_matrix[:, j] / state_counts[state]
-                )
+            col_sum = np.sum(self.emission_matrix[:, j])
+            if col_sum > 0:
+                self.emission_matrix[:, j] = self.emission_matrix[:, j] / col_sum
 
     def split_data(self, data: List[Dict], train_ratio: float = 0.7):
         random.shuffle(data)
@@ -123,16 +113,10 @@ class ModelProcessor:
         self.validation_data = data[split_idx:]
 
     def process_and_save(self, input_file: str = "data/nfl_dataset.json"):
-        # Load data
         data = self.load_data(input_file)
-
-        # Split into train/validation
         self.split_data(data)
-
-        # Compute matrices using training data
         self.compute_matrices(self.train_data)
 
-        # Save processed datasets
         with open("data/train_set.json", "w") as f:
             json.dump(
                 {

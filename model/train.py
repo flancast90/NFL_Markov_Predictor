@@ -1,6 +1,5 @@
 import json
 import numpy as np
-from typing import Dict, List
 from markov import HMM
 
 
@@ -16,45 +15,23 @@ class ModelTrainer:
         with open(train_file, "r") as f:
             train_data = json.load(f)
 
-        base_transition = np.array(train_data["transition_matrix"])
-        base_emission = np.array(train_data["emission_matrix"])
-
-        # Create padded transition matrix
-        padded_transition = np.full(
-            (len(base_transition) + 2, len(base_transition) + 2), 1e-10
-        )
-
-        # Copy the base transition probabilities to the middle of the padded matrix
-        padded_transition[1:-1, 1:-1] = base_transition
-
-        # Calculate initial probabilities (from start state to each state)
-        # Use the first state distribution from base_transition
-        padded_transition[1:-1, 0] = base_transition[0, :]
-
-        # Calculate final probabilities (from each state to end state)
-        # Use average of outgoing probabilities
-        padded_transition[-1, 1:-1] = np.mean(base_transition, axis=1)
-
-        # Normalize the start and end state probabilities
-        padded_transition[1:-1, 0] /= np.sum(padded_transition[1:-1, 0])
-        padded_transition[-1, 1:-1] /= np.sum(padded_transition[-1, 1:-1])
+        transition_matrix = np.array(train_data["transition_matrix"])
+        emission_matrix = np.array(train_data["emission_matrix"])
 
         self.states = train_data["states"]
         self.observations = train_data["observations"]
         self.train_data = train_data["data"]
 
         # Debug prints
-        print("Base transition matrix shape:", base_transition.shape)
-        print("Base emission matrix shape:", base_emission.shape)
-        print("Padded transition matrix shape:", padded_transition.shape)
-        print("Base transition matrix:\n", base_transition)
-        print("Base emission matrix:\n", base_emission)
-        print("Padded transition matrix:\n", padded_transition)
+        print("Transition matrix shape:", transition_matrix.shape)
+        print("Emission matrix shape:", emission_matrix.shape)
+        print("Transition matrix:\n", transition_matrix)
+        print("Emission matrix:\n", emission_matrix)
 
         # Initialize HMM with the matrices
         self.hmm = HMM(
-            transition_matrix=padded_transition,
-            emission_matrix=base_emission,
+            transition_matrix=transition_matrix,
+            emission_matrix=emission_matrix,
             observation_labels=self.observations,
         )
 
@@ -93,9 +70,7 @@ class ModelTrainer:
         if np.all(self.hmm.transition_matrix == 0) or np.all(
             self.hmm.emission_matrix == 0
         ):
-            print(
-                "Warning: Training produced invalid matrices, reverting to original matrices"
-            )
+            print("Warning: Training produced invalid matrices, reverting to original")
             self.hmm.transition_matrix = original_transition
             self.hmm.emission_matrix = original_emission
 
@@ -104,31 +79,31 @@ class ModelTrainer:
         if self.hmm is None:
             raise ValueError("No trained model to save")
 
-        # Extract the core transition matrix (remove padding)
-        core_transition = self.hmm.transition_matrix[1:-1, 1:-1]
-
         # If matrices are all zeros, something went wrong
-        if np.all(core_transition == 0) or np.all(self.hmm.emission_matrix == 0):
-            print("Warning: Matrices contain all zeros, using original matrices")
+        if np.all(self.hmm.transition_matrix == 0) or np.all(
+            self.hmm.emission_matrix == 0
+        ):
+            print("Warning: Matrices contain all zeros, using original")
             # Load original matrices from training data
             with open("data/train_set.json", "r") as f:
                 train_data = json.load(f)
-                core_transition = np.array(train_data["transition_matrix"])
+                transition_matrix = np.array(train_data["transition_matrix"])
                 emission_matrix = np.array(train_data["emission_matrix"])
         else:
+            transition_matrix = self.hmm.transition_matrix
             emission_matrix = self.hmm.emission_matrix
 
         model_data = {
-            "transition_matrix": core_transition.tolist(),
+            "transition_matrix": transition_matrix.tolist(),
             "emission_matrix": emission_matrix.tolist(),
             "states": self.states,
             "observations": self.observations,
         }
 
         print("Saving model with:")
-        print("Transition matrix shape:", core_transition.shape)
+        print("Transition matrix shape:", transition_matrix.shape)
         print("Emission matrix shape:", emission_matrix.shape)
-        print("Transition matrix:\n", core_transition)
+        print("Transition matrix:\n", transition_matrix)
         print("Emission matrix:\n", emission_matrix)
 
         with open(output_file, "w") as f:
