@@ -54,10 +54,22 @@ class ModelValidator:
             validation_data = json.load(f)
             self.validation_data = validation_data["data"]
 
-    def predict(self, observation: str) -> str:
-        """Predict winner based on observation."""
+    def predict(self, home_team: str, away_team: str) -> str:
+        """Predict winner based on team names."""
         if self.hmm is None:
             raise ValueError("Must load model before predicting")
+
+        if self.validation_data is None:
+            raise ValueError("Must load validation data before predicting")
+
+        # Sort games by date for historical calculations
+        sorted_games = sorted(self.validation_data, key=lambda x: x["date"])
+        latest_date = sorted_games[-1]["date"]
+
+        # Get historical MOVs for prediction
+        home_mov = get_historical_mov(home_team, latest_date, sorted_games)
+        away_mov = get_historical_mov(away_team, latest_date, sorted_games)
+        observation = get_game_observation(home_mov, away_mov)
 
         obs_idx = self.observations.index(observation)
         home_state_idx = self.states.index("home_win")
@@ -96,7 +108,7 @@ class ModelValidator:
             observation = get_game_observation(home_mov, away_mov)
 
             actual_state = get_game_result(game["home_score"], game["away_score"])
-            predicted_state = self.predict(observation)
+            predicted_state = self.predict(game["home_team"], game["away_team"])
 
             predictions.append(predicted_state)
             actuals.append(actual_state)
