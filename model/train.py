@@ -1,13 +1,20 @@
 import json
 import numpy as np
 from markov import HMM
+from .utils import get_historical_mov, get_game_observation
 
 
 class ModelTrainer:
     def __init__(self):
         self.hmm = None
-        self.states = None
-        self.observations = None
+        self.states = ["home_win", "away_win"]
+        self.observations = [
+            "strong_history",
+            "positive_history",
+            "neutral_history",
+            "negative_history",
+            "weak_history",
+        ]
         self.train_data = None
 
     def load_training_data(self, train_file: str = "data/train_set.json"):
@@ -17,16 +24,7 @@ class ModelTrainer:
 
         transition_matrix = np.array(train_data["transition_matrix"])
         emission_matrix = np.array(train_data["emission_matrix"])
-
-        self.states = train_data["states"]
-        self.observations = train_data["observations"]
         self.train_data = train_data["data"]
-
-        # Debug prints
-        print("Transition matrix shape:", transition_matrix.shape)
-        print("Emission matrix shape:", emission_matrix.shape)
-        print("Transition matrix:\n", transition_matrix)
-        print("Emission matrix:\n", emission_matrix)
 
         # Initialize HMM with the matrices
         self.hmm = HMM(
@@ -40,23 +38,15 @@ class ModelTrainer:
         if self.hmm is None:
             raise ValueError("Must load training data before training")
 
+        # Sort games by date for historical calculations
+        sorted_games = sorted(self.train_data, key=lambda x: x["date"])
+
         # Extract observation sequence from training data
         observation_sequence = []
-        for game in self.train_data:
-            point_diff = game["home_score"] - game["away_score"]
-            # Convert point difference to observation category
-            if point_diff > 14:
-                obs = "big_win"
-            elif point_diff > 7:
-                obs = "win"
-            elif point_diff > 0:
-                obs = "close_win"
-            elif point_diff > -7:
-                obs = "close_loss"
-            elif point_diff > -14:
-                obs = "loss"
-            else:
-                obs = "big_loss"
+        for game in sorted_games:
+            home_mov = get_historical_mov(game["home_team"], game["date"], sorted_games)
+            away_mov = get_historical_mov(game["away_team"], game["date"], sorted_games)
+            obs = get_game_observation(home_mov, away_mov)
             observation_sequence.append(obs)
 
         # Store original matrices
@@ -66,7 +56,7 @@ class ModelTrainer:
         # Train HMM using observation sequence
         self.hmm.train(observation_sequence, num_iterations=num_iterations)
 
-        # Check if training produced valid matrices, if not, revert to original
+        # Check if training produced valid matrices
         if np.all(self.hmm.transition_matrix == 0) or np.all(
             self.hmm.emission_matrix == 0
         ):

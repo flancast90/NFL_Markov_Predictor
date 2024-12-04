@@ -2,18 +2,19 @@ import json
 import numpy as np
 from typing import List, Dict
 import random
+from datetime import datetime
+from .utils import get_historical_mov, get_game_observation, get_game_result
 
 
 class ModelProcessor:
     def __init__(self):
         self.states = ["home_win", "away_win"]
         self.observations = [
-            "big_win",
-            "win",
-            "close_win",
-            "close_loss",
-            "loss",
-            "big_loss",
+            "strong_history",
+            "positive_history",
+            "neutral_history",
+            "negative_history",
+            "weak_history",
         ]
         self.state_to_index = {state: i for i, state in enumerate(self.states)}
         self.obs_to_index = {obs: i for i, obs in enumerate(self.observations)}
@@ -39,25 +40,8 @@ class ModelProcessor:
                 and game.get("away_ml") != "NA"
             ]
 
-    def get_game_result(self, home_score: int, away_score: int) -> str:
-        return "home_win" if home_score > away_score else "away_win"
-
-    def get_point_difference_observation(self, home_score: int, away_score: int) -> str:
-        point_diff = home_score - away_score
-        if point_diff > 14:
-            return "big_win"
-        elif point_diff > 7:
-            return "win"
-        elif point_diff > 0:
-            return "close_win"
-        elif point_diff > -7:
-            return "close_loss"
-        elif point_diff > -14:
-            return "loss"
-        else:
-            return "big_loss"
-
     def compute_matrices(self, games: List[Dict]):
+        # Initialize matrices with small non-zero values
         self.transition_matrix = np.full(
             (len(self.states) + 2, len(self.states) + 2), 0.1667
         )
@@ -65,30 +49,38 @@ class ModelProcessor:
             (len(self.observations), len(self.states)), 0.1667
         )
 
-        state_counts = {state: 0 for state in self.states}
+        # Sort games by date
+        sorted_games = sorted(games, key=lambda x: x["date"])
 
-        for i in range(len(games)):
-            current_game = games[i]
-            current_state = self.get_game_result(
+        for i, current_game in enumerate(sorted_games):
+            # Get actual game result
+            current_state = get_game_result(
                 current_game["home_score"], current_game["away_score"]
             )
-            current_obs = self.get_point_difference_observation(
-                current_game["home_score"], current_game["away_score"]
+
+            # Calculate historical MOVs
+            home_mov = get_historical_mov(
+                current_game["home_team"], current_game["date"], sorted_games
+            )
+            away_mov = get_historical_mov(
+                current_game["away_team"], current_game["date"], sorted_games
             )
 
-            state_counts[current_state] += 1
+            # Get observation based on historical MOVs
+            current_obs = get_game_observation(home_mov, away_mov)
 
-            state_idx = self.state_to_index[current_state] + 1  # +1 for start state
+            state_idx = self.state_to_index[current_state] + 1
             obs_idx = self.obs_to_index[current_obs]
             self.emission_matrix[obs_idx][state_idx - 1] += 1
 
+            # Update transition matrix (same as before)
             if i == 0:
                 self.transition_matrix[state_idx][0] += 1
             elif i == len(games) - 1:
                 self.transition_matrix[-1][state_idx] += 1
             else:
-                next_game = games[i + 1]
-                next_state = self.get_game_result(
+                next_game = sorted_games[i + 1]
+                next_state = get_game_result(
                     next_game["home_score"], next_game["away_score"]
                 )
                 self.transition_matrix[self.state_to_index[next_state] + 1][
