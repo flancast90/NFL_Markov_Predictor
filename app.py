@@ -22,9 +22,7 @@ def load_hmm_model_from_file(file_path):
             model_data = json.load(file)
             
         # Get the 2x2 transition matrix and convert from log probabilities
-        transition_matrix = np.array(model_data["transition_matrix"])[:2, :2]
-        transition_matrix = np.exp(transition_matrix)
-        
+        transition_matrix = np.exp(np.array(model_data["transition_matrix"])[1:3, 1:3])
         # Convert emission matrix from log probabilities
         emission_matrix = np.exp(np.array(model_data["emission_matrix"]))
         
