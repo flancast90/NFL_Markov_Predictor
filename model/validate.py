@@ -3,7 +3,7 @@ import numpy as np
 from datetime import datetime
 from markov import HMM
 
-strategy: str = "tail"  # Can be either "tail" or "fade"
+strategy: str = "fade"  # Can be either "tail" or "fade"
 
 
 class ModelValidator:
@@ -14,15 +14,12 @@ class ModelValidator:
         self.validation_data = None
 
     def __american_to_decimal(self, american_odds: int) -> float:
-        """Convert American odds to decimal odds"""
         american_odds = int(american_odds)
-        if american_odds > 0:
-            return american_odds / 100 + 1
-        else:
-            return 1 - (100 / american_odds)
+        return (
+            american_odds / 100 + 1 if american_odds > 0 else 1 - (100 / american_odds)
+        )
 
     def load_model(self, model_file: str = "model/saves/trained_model.json"):
-        """Load trained model parameters"""
         with open(model_file, "r") as f:
             model_data = json.load(f)
 
@@ -31,7 +28,6 @@ class ModelValidator:
         self.states = model_data["states"]
         self.observations = model_data["observations"]
 
-        # Create padded transition matrix
         padded_transition = np.full(
             (len(base_transition) + 2, len(base_transition) + 2), 1e-10
         )
@@ -48,13 +44,11 @@ class ModelValidator:
         )
 
     def load_validation_data(self, validation_file: str = "data/validation_set.json"):
-        """Load validation dataset"""
         with open(validation_file, "r") as f:
             validation_data = json.load(f)
             self.validation_data = validation_data["data"]
 
     def get_observation(self, home_score: int, away_score: int) -> str:
-        """Convert score difference to observation category"""
         point_diff = home_score - away_score
         if point_diff > 14:
             return "big_win"
@@ -70,7 +64,6 @@ class ModelValidator:
             return "big_loss"
 
     def validate(self):
-        """Run validation and compute metrics"""
         if self.hmm is None or self.validation_data is None:
             raise ValueError("Must load model and validation data before validating")
 
@@ -82,17 +75,14 @@ class ModelValidator:
         bets = 0
 
         for game in self.validation_data:
-            # Get actual observation
             observation = self.get_observation(game["home_score"], game["away_score"])
             actual_state = (
                 "home_win" if game["home_score"] > game["away_score"] else "away_win"
             )
 
-            # Make prediction using likelihood comparison
             home_likelihood = self.hmm.likelihood([observation])
             away_likelihood = self.hmm.likelihood([observation])
 
-            # Base prediction on likelihoods and strategy
             model_prediction = (
                 "home_win" if home_likelihood > away_likelihood else "away_win"
             )
@@ -105,20 +95,13 @@ class ModelValidator:
             predictions.append(predicted_state)
             actuals.append(actual_state)
 
-            # Calculate profit
             if predicted_state == "home_win":
                 odds = self.__american_to_decimal(game["home_ml"])
-                if actual_state == "home_win":
-                    total_profit += odds - 1
-                else:
-                    total_profit -= 1
+                total_profit += odds - 1 if actual_state == "home_win" else -1
                 bets += 1
-            else:  # predicted away win
+            else:
                 odds = self.__american_to_decimal(game["away_ml"])
-                if actual_state == "away_win":
-                    total_profit += odds - 1
-                else:
-                    total_profit -= 1
+                total_profit += odds - 1 if actual_state == "away_win" else -1
                 bets += 1
 
             if predicted_state == actual_state:
@@ -127,14 +110,12 @@ class ModelValidator:
         accuracy = correct_predictions / total_predictions
         roi = (total_profit / bets) * 100 if bets > 0 else 0
 
-        # Calculate confusion matrix
         confusion_matrix = np.zeros((2, 2))
         for pred, actual in zip(predictions, actuals):
             pred_idx = self.states.index(pred)
             actual_idx = self.states.index(actual)
             confusion_matrix[actual_idx][pred_idx] += 1
 
-        # Save results
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         with open(f"results/results_{timestamp}.txt", "w") as f:
             f.write(f"Model Validation Results -> {strategy}ing strategy\n")
@@ -150,18 +131,15 @@ class ModelValidator:
             f.write("Predicted ->      Home Win    Away Win\n")
             f.write("Actual |\n")
             f.write(
-                f"Home Win     {confusion_matrix[0][0]:10.0f} "
-                f"{confusion_matrix[0][1]:10.0f}\n"
+                f"Home Win     {confusion_matrix[0][0]:10.0f} {confusion_matrix[0][1]:10.0f}\n"
             )
             f.write(
-                f"Away Win     {confusion_matrix[1][0]:10.0f} "
-                f"{confusion_matrix[1][1]:10.0f}\n\n"
+                f"Away Win     {confusion_matrix[1][0]:10.0f} {confusion_matrix[1][1]:10.0f}\n\n"
             )
 
-            # Calculate additional metrics
-            true_pos = confusion_matrix[0][0]  # True positives for home wins
-            false_pos = confusion_matrix[1][0]  # False positives for home wins
-            false_neg = confusion_matrix[0][1]  # False negatives for home wins
+            true_pos = confusion_matrix[0][0]
+            false_pos = confusion_matrix[1][0]
+            false_neg = confusion_matrix[0][1]
 
             precision = (
                 true_pos / (true_pos + false_pos) if (true_pos + false_pos) > 0 else 0
