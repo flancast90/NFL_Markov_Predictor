@@ -2,6 +2,7 @@ import json
 import numpy as np
 from datetime import datetime
 from markov import HMM
+from .utils import get_historical_mov, get_game_observation, get_game_result
 
 strategy: str = "tail"  # Can be either "tail" or "fade"
 
@@ -9,8 +10,14 @@ strategy: str = "tail"  # Can be either "tail" or "fade"
 class ModelValidator:
     def __init__(self):
         self.hmm = None
-        self.states = None
-        self.observations = None
+        self.states = ["home_win", "away_win"]
+        self.observations = [
+            "strong_history",
+            "positive_history",
+            "neutral_history",
+            "negative_history",
+            "weak_history",
+        ]
         self.validation_data = None
 
     def __american_to_decimal(self, american_odds: int) -> float:
@@ -25,8 +32,6 @@ class ModelValidator:
 
         base_transition = np.array(model_data["transition_matrix"])
         emission_matrix = np.array(model_data["emission_matrix"])
-        self.states = model_data["states"]
-        self.observations = model_data["observations"]
 
         padded_transition = np.full(
             (len(base_transition) + 2, len(base_transition) + 2), 1e-10
@@ -49,34 +54,29 @@ class ModelValidator:
             validation_data = json.load(f)
             self.validation_data = validation_data["data"]
 
-    def get_observation(self, home_score: int, away_score: int) -> str:
-        point_diff = home_score - away_score
-        if point_diff > 14:
-            return "big_win"
-        elif point_diff > 7:
-            return "win"
-        elif point_diff > 0:
-            return "close_win"
-        elif point_diff > -7:
-            return "close_loss"
-        elif point_diff > -14:
-            return "loss"
-        else:
-            return "big_loss"
-
-    def predict(self, observation: str) -> str:
-        """Predict winner based on observation."""
+    def predict(self, home_team: str, away_team: str) -> str:
+        """Predict winner based on team names."""
         if self.hmm is None:
             raise ValueError("Must load model before predicting")
+
+        if self.validation_data is None:
+            raise ValueError("Must load validation data before predicting")
+
+        # Sort games by date for historical calculations
+        sorted_games = sorted(self.validation_data, key=lambda x: x["date"])
+        latest_date = sorted_games[-1]["date"]
+
+        # Get historical MOVs for prediction
+        home_mov = get_historical_mov(home_team, latest_date, sorted_games)
+        away_mov = get_historical_mov(away_team, latest_date, sorted_games)
+        observation = get_game_observation(home_mov, away_mov)
 
         obs_idx = self.observations.index(observation)
         home_state_idx = self.states.index("home_win")
         away_state_idx = self.states.index("away_win")
 
-        # The emission matrix is shaped (n_observations, n_states)
         home_likelihood = self.hmm.emission_matrix[obs_idx][home_state_idx]
         away_likelihood = self.hmm.emission_matrix[obs_idx][away_state_idx]
-        print(home_likelihood, away_likelihood)
 
         model_prediction = (
             "home_win" if home_likelihood > away_likelihood else "away_win"
@@ -91,20 +91,25 @@ class ModelValidator:
         if self.hmm is None or self.validation_data is None:
             raise ValueError("Must load model and validation data before validating")
 
+        # Sort games by date for historical calculations
+        sorted_games = sorted(self.validation_data, key=lambda x: x["date"])
+
         correct_predictions = 0
-        total_predictions = len(self.validation_data)
+        total_predictions = len(sorted_games)
         predictions = []
         actuals = []
         total_profit = 0
         bets = 0
 
-        for game in self.validation_data:
-            observation = self.get_observation(game["home_score"], game["away_score"])
-            actual_state = (
-                "home_win" if game["home_score"] > game["away_score"] else "away_win"
-            )
+        for game in sorted_games:
+            # Get historical MOVs for prediction
+            home_mov = get_historical_mov(game["home_team"], game["date"], sorted_games)
+            away_mov = get_historical_mov(game["away_team"], game["date"], sorted_games)
+            observation = get_game_observation(home_mov, away_mov)
 
-            predicted_state = self.predict(observation)
+            actual_state = get_game_result(game["home_score"], game["away_score"])
+            predicted_state = self.predict(game["home_team"], game["away_team"])
+
             predictions.append(predicted_state)
             actuals.append(actual_state)
 
