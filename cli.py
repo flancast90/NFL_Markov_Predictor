@@ -17,19 +17,35 @@ def main():
     parser.add_argument(
         "--validate", action="store_true", help="Validate the trained model"
     )
+    parser.add_argument(
+        "--dataset", help="Select the desired dataset"
+    )
+    parser.add_argument(
+        "--model", help="Select the name of the model (Will save at saves/model_*model*.pkl)"
+    )
+
 
     args = parser.parse_args()
 
+    if args.dataset is not None:
+        print("Dataset located at " + args.dataset + " loaded")
+
     if args.process:
         processor = ModelProcessor()
-        processor.process_and_save()
+        if args.dataset is not None:
+            processor.process_and_save(args.dataset)
+        else:
+            processor.process_and_save()
         print("Processed data and saved train/validation sets")
 
     if args.train:
         trainer = ModelTrainer()
         trainer.load_training_data()
         trainer.train()
-        trainer.save_model()
+        if args.model is not None:
+            trainer.save_model(args.model)
+        else:
+            trainer.save_model()
         print("Trained and saved model")
 
     if args.validate:
