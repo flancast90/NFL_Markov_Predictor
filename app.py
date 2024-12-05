@@ -15,12 +15,18 @@ st.set_page_config(
     page_title="HMM Sports Predictor", layout="wide", initial_sidebar_state="expanded"
 )
 
+# Load README content
+try:
+    with open("README.md", "r") as f:
+        readme_content = f.read()
+except Exception as e:
+    readme_content = "Error loading README.md"
+
 # Custom CSS for better styling
 st.markdown(
     """
 <style>
     .stApp {
-        max-width: 1200px;
         margin: 0 auto;
     }
     .main > div {
@@ -48,6 +54,15 @@ st.markdown(
     }
     .css-1d391kg {  /* Sidebar styling */
         background-color: #f8f9fa;
+    }
+    .graphviz-chart {
+        margin: 0 auto;
+        width: 100%;
+    }
+    @media (min-width: 1200px) {
+        .graphviz-chart {
+            width: 75%;
+        }
     }
 </style>
 """,
@@ -83,7 +98,7 @@ def load_hmm_model_from_file(file_path):
 @st.cache_data
 def create_hmm_visualization(transition_matrix, emission_matrix, states, observations):
     dot = Digraph(comment="Hidden Markov Model", engine="dot")
-    dot.attr(rankdir="LR", bgcolor="transparent")
+    dot.attr(rankdir="LR", bgcolor="transparent", size="1,1")  # Half width
 
     # Enhanced node styling
     node_styles = {
@@ -92,16 +107,16 @@ def create_hmm_visualization(transition_matrix, emission_matrix, states, observa
             "style": "filled",
             "fillcolor": "#1f77b4",
             "fontcolor": "white",
-            "width": "1.5",
-            "penwidth": "2",
+            "width": "0.75",  # Half width
+            "penwidth": "1",  # Half width
         },
         "obs": {
             "shape": "box",
             "style": "filled",
             "fillcolor": "#ff7f0e",
             "fontcolor": "white",
-            "width": "1.5",
-            "penwidth": "2",
+            "width": "0.75",  # Half width
+            "penwidth": "1",  # Half width
         },
     }
 
@@ -128,7 +143,7 @@ def create_hmm_visualization(transition_matrix, emission_matrix, states, observa
                     f"state_{from_state}",
                     f"state_{to_state}",
                     label=f"{prob*100:.1f}%",
-                    penwidth=str(1 + 3 * prob),
+                    penwidth=str(0.5 + 1.5 * prob),  # Half width
                     color="#1f77b4",
                     fontcolor="#2c3e50",
                 )
@@ -142,7 +157,7 @@ def create_hmm_visualization(transition_matrix, emission_matrix, states, observa
                     f"obs_{obs}",
                     label=f"{prob*100:.1f}%",
                     style="dashed",
-                    penwidth="1.5",
+                    penwidth="0.75",  # Half width
                     color="#ff7f0e",
                     fontcolor="#2c3e50",
                 )
@@ -305,13 +320,21 @@ def main():
     st.sidebar.title("🏈 Navigation")
     page = st.sidebar.radio(
         "",
-        ["Model Visualization", "Make Predictions", "Model Analysis"],
+        ["Documentation", "Model Visualization", "Make Predictions", "Model Analysis"],
         format_func=lambda x: (
-            f"📊 {x}"
-            if x == "Model Analysis"
-            else f"🔮 {x}" if x == "Make Predictions" else f"📈 {x}"
+            "📚 Documentation"
+            if x == "Documentation"
+            else (
+                f"📊 {x}"
+                if x == "Model Analysis"
+                else f"🔮 {x}" if x == "Make Predictions" else f"📈 {x}"
+            )
         ),
     )
+
+    if page == "Documentation":
+        st.markdown(readme_content)
+        return
 
     file_path = "model\\saves\\trained_model.json"
     transition_matrix, emission_matrix, states, observations = load_hmm_model_from_file(
@@ -339,7 +362,9 @@ def main():
             dot = create_hmm_visualization(
                 transition_matrix, emission_matrix, states, observations
             )
+            st.markdown('<div class="graphviz-chart">', unsafe_allow_html=True)
             st.graphviz_chart(dot, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
             col1, col2 = st.columns(2)
             with col1:
