@@ -3,7 +3,7 @@ from model.process import ModelProcessor
 from model.train import ModelTrainer
 from model.validate import ModelValidator
 from montecarlo import MonteCarloSimulator
-import algs
+
 
 def main():
     parser = argparse.ArgumentParser(description="NFL Game Prediction CLI")
@@ -19,15 +19,19 @@ def main():
         "--validate", action="store_true", help="Validate the trained model"
     )
     parser.add_argument(
-        "--dataset", help="Select the desired dataset (Default dataset is data/nfl_dataset.json)"
+        "--dataset",
+        help="Select the desired dataset (Default dataset is data/nfl_dataset.json)",
     )
     parser.add_argument(
-        "--model", help="Select the name of the model (Will save at model/saves/model_*model*.json, defaults to model/saves/trained_model.json)"
+        "--model",
+        help="Select the name of the model (Will save at model/saves/model_*model*.json, defaults to model/saves/trained_model.json)",
     )
     parser.add_argument(
-        "--montecarlo", type=int, metavar='N', help="Run a Monte Carlo simulation on the given training data with N iterations"
+        "--montecarlo",
+        type=int,
+        metavar="N",
+        help="Run a Monte Carlo simulation on the given training data with N iterations",
     )
-
 
     args = parser.parse_args()
 
@@ -70,12 +74,16 @@ def main():
         validator.load_model()
         print("Loading validation data...")
         validator.load_validation_data()
-        print(f"Validation data loaded: {len(validator.validation_data) if validator.validation_data else 'None'} games")
-        
+        print(
+            f"Validation data loaded: {len(validator.validation_data) if validator.validation_data else 'None'} games"
+        )
+
         simulator = MonteCarloSimulator(validator, num_simulations=args.montecarlo)
         results = simulator.simulate()
         simulator.save_results(results)
-        print(f"Monte Carlo simulation with {args.montecarlo} iterations complete. Results saved to file.")
+        print(
+            f"Monte Carlo simulation with {args.montecarlo} iterations complete. Results saved to file."
+        )
 
 
 if __name__ == "__main__":
