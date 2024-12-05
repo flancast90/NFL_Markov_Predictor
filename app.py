@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import List, Dict, Tuple
 from functools import lru_cache
 from model.validate import ModelValidator
+from montecarlo import MonteCarloSimulator
+import plotly.graph_objects as go
 
 # Configure page and styling
 st.set_page_config(
@@ -337,6 +339,47 @@ def display_matchup_history(games: List[Dict], home_team: str, away_team: str):
         st.info("No recent matchups found between these teams")
 
 
+def create_monte_carlo_plot(paths, metric="profit", num_paths=50):
+    """Create a line plot of Monte Carlo simulation paths"""
+    fig = go.Figure()
+
+    # Randomly sample paths if there are too many
+    path_indices = np.random.choice(
+        len(paths), min(num_paths, len(paths)), replace=False
+    )
+
+    for idx in path_indices:
+        path = paths[idx]
+        y_values = getattr(path, metric)
+
+        fig.add_trace(
+            go.Scatter(
+                y=y_values,
+                mode="lines",
+                line=dict(width=1, color="rgba(70, 130, 180, 0.1)"),
+                showlegend=False,
+            )
+        )
+
+    # Add mean line
+    mean_values = np.mean([getattr(path, metric) for path in paths], axis=0)
+    fig.add_trace(
+        go.Scatter(
+            y=mean_values, mode="lines", line=dict(width=3, color="red"), name="Mean"
+        )
+    )
+
+    fig.update_layout(
+        title=f"Monte Carlo Simulation Paths - {metric.title()}",
+        xaxis_title="Games",
+        yaxis_title=metric.title(),
+        template="plotly_white",
+        hovermode="x unified",
+    )
+
+    return fig
+
+
 def main():
     st.sidebar.title("🏈 Navigation")
 
@@ -526,6 +569,57 @@ def main():
 
         elif page == "Model Analysis":
             st.title("📊 Model Analysis Dashboard")
+
+            with st.expander("💾 Monte Carlo Simulation", expanded=True):
+                col1, col2 = st.columns(2)
+                with col1:
+                    num_simulations = st.slider(
+                        "Number of Simulations",
+                        min_value=10,
+                        max_value=1000,
+                        value=100,
+                        step=10,
+                    )
+                with col2:
+                    num_displayed_paths = st.slider(
+                        "Number of Displayed Paths",
+                        min_value=10,
+                        max_value=100,
+                        value=50,
+                        step=10,
+                    )
+
+                metric = st.selectbox(
+                    "Select Metric to Visualize",
+                    ["profit", "accuracy", "roi"],
+                    format_func=lambda x: x.title(),
+                )
+
+                if st.button("Run Monte Carlo Simulation"):
+                    with st.spinner("Running simulations..."):
+                        validator = ModelValidator()
+                        validator.load_model()
+                        validator.load_validation_data()
+
+                        simulator = MonteCarloSimulator(validator, num_simulations)
+                        results = simulator.simulate(store_paths=True)
+
+                        fig = create_monte_carlo_plot(
+                            results["paths"],
+                            metric=metric,
+                            num_paths=num_displayed_paths,
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+
+                        st.markdown("### Summary Statistics")
+                        stats = results[metric]
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Mean", f"{stats['mean']:.2f}")
+                        col2.metric("Std Dev", f"{stats['std']:.2f}")
+                        col3.metric(
+                            "95% CI",
+                            f"[{stats['ci_lower']:.2f}, {stats['ci_upper']:.2f}]",
+                        )
 
             col1, col2 = st.columns(2)
 
