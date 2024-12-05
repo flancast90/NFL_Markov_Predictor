@@ -402,7 +402,7 @@ def main():
         if st.sidebar.button(
             f"{nav_info['icon']} {nav_name}",
             key=nav_name,
-            help=nav_info["desc"],
+            help=nav_info['desc'],
             use_container_width=True,
         ):
             st.session_state.page = nav_name
@@ -417,7 +417,7 @@ def main():
         st.markdown(readme_content)
         return
 
-    file_path = "model\\saves\\trained_model.json"
+    file_path = "model/saves/trained_model.json"
     transition_matrix, emission_matrix, states, observations = load_hmm_model_from_file(
         file_path
     )
@@ -479,7 +479,7 @@ def main():
         elif page == "Make Predictions":
             st.title("🏈 Game Outcome Predictor")
 
-            games = load_nfl_games("data\\nfl_dataset.json")
+            games = load_nfl_games("data/nfl_dataset.json")
 
             if games:
                 teams = get_unique_teams(games)
