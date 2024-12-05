@@ -2,7 +2,6 @@ import json
 import numpy as np
 from typing import List, Dict
 import random
-from datetime import datetime
 from .utils import get_historical_mov, get_game_observation, get_game_result
 
 
@@ -27,6 +26,18 @@ class ModelProcessor:
         self.validation_data = []
 
     def load_data(self, filepath: str) -> List[Dict]:
+        """
+        Load the given file into the class.
+
+        Args:
+            filepath: Path to file 
+        Returns:
+            List containing dictionaries, each representing one game
+            Each dictionary contains:
+                - Home and away team names for a given game
+                - Scores for home and away teams
+                - Moneyline for home and away teams
+        """
         with open(filepath, "r") as f:
             data = json.load(f)
             return [
@@ -99,16 +110,34 @@ class ModelProcessor:
                 self.emission_matrix[:, j] = self.emission_matrix[:, j] / col_sum
 
     def split_data(self, data: List[Dict], train_ratio: float = 0.7):
+        """
+        Splits the data into training and validation sets
+        
+        Args:
+            data: The full dataset for the simulation
+            train_ratio: The ratio of training data to validation data    
+        """
         random.shuffle(data)
         split_idx = int(len(data) * train_ratio)
         self.train_data = data[:split_idx]
         self.validation_data = data[split_idx:]
 
     def process_and_save(self, input_file: str = "data/nfl_dataset.json"):
+        """
+        Helper function to process the data, before saving it to a file.
+
+        Args:
+            input_file: The location of the dataset being inputted.
+        """
         data = self.load_data(input_file)
         self.split_data(data)
         self.compute_matrices(self.train_data)
 
+
+    def save_data(self):
+        """
+            Saves the training and validation data to separate files, along with the transition and emission matrices.
+        """
         with open("data/train_set.json", "w") as f:
             json.dump(
                 {
