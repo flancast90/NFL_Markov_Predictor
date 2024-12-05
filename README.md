@@ -21,6 +21,7 @@ To run this code from the command line, run cli.py with the arguments correspond
 * --train: Takes in the generated training model and uses it to train the Markov model
 * --model: Determines where the Markov model will be output to / input from (will save at model/saves/model_\*model\*.json, defaults to model/saves/trained_model.json)
 * --validate: Generates accuracy metrics for the Markov model by comparing the results from it to the validation data
+* --montecarlo <its>: Runs its iterations of the Monte Carlo simulation.
 
 ## Usage (App)
 
