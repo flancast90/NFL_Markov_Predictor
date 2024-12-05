@@ -18,7 +18,12 @@ class ModelTrainer:
         self.train_data = None
 
     def load_training_data(self, train_file: str = "data/train_set.json"):
-        """Load training data and matrices from JSON file"""
+        """
+        Load training data and matrices from JSON file.
+
+        Args:
+        train_file: The location of the dataset used for training the model
+        """
         with open(train_file, "r") as f:
             train_data = json.load(f)
 
@@ -34,7 +39,12 @@ class ModelTrainer:
         )
 
     def train(self, num_iterations: int = 10):
-        """Train the HMM model on the loaded data"""
+        """
+        Train the HMM model on the loaded data
+        
+        Args: 
+            num_iterations: How many times the model is trained on the data
+        """
         if self.hmm is None:
             raise ValueError("Must load training data before training")
 
@@ -65,7 +75,12 @@ class ModelTrainer:
             self.hmm.emission_matrix = original_emission
 
     def save_model(self, output_file: str = "model/saves/trained_model.json"):
-        """Save the trained model parameters"""
+        """
+        Save the trained model parameters.
+        
+        Args:
+            output_file: The location the data should be output to.
+        """
         if self.hmm is None:
             raise ValueError("No trained model to save")
 

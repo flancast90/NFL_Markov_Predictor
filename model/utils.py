@@ -1,9 +1,17 @@
-from datetime import datetime
 from typing import List, Dict
 
 
 def get_historical_mov(team: str, date: int, games: List[Dict]) -> float:
-    """Calculate historical margin of victory for a team up to a given date."""
+    """
+    Calculate historical margin of victory for a team up to a given date.
+
+    Args:
+        team: The name of the selected team being analyzed.
+        date: The date before which games will be considered.
+        games: A list of all games in consideration.
+    Returns:
+        float: The mean margin of victory.
+    """
     historical_games = []
 
     for game in games:
