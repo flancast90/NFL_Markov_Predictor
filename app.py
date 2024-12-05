@@ -1,6 +1,5 @@
 import streamlit as st
 import json
-import pickle
 from graphviz import Digraph
 import numpy as np
 import pandas as pd
@@ -8,335 +7,495 @@ import os
 import plotly.express as px
 from datetime import datetime
 from typing import List, Dict, Tuple
+from functools import lru_cache
 
-st.set_page_config(page_title="HMM Sports Predictor", layout="wide")
+# Configure page and styling
+st.set_page_config(
+    page_title="HMM Sports Predictor", layout="wide", initial_sidebar_state="expanded"
+)
 
-# Reads and parses the HMM model from a JSON file, converting log probabilities to regular probabilities for visualization.
+# Custom CSS for better styling
+st.markdown(
+    """
+<style>
+    .stApp {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    .main > div {
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+        color: #1f77b4;
+        font-size: 2.5rem !important;
+        margin-bottom: 2rem !important;
+    }
+    h2 {
+        color: #2c3e50;
+        font-size: 1.8rem !important;
+    }
+    .stButton>button {
+        width: 100%;
+        border-radius: 5px;
+        background-color: #1f77b4;
+        color: white;
+    }
+    .stSelectbox {
+        margin-bottom: 1rem;
+    }
+    .css-1d391kg {  /* Sidebar styling */
+        background-color: #f8f9fa;
+    }
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+
+@lru_cache(maxsize=1)
 def load_hmm_model_from_file(file_path):
     try:
         if not os.path.exists(file_path):
             st.error(f"Could not find file: {file_path}")
             return None, None, None, None
-            
-        with open(file_path, 'r') as file:
+
+        with open(file_path, "r") as file:
             model_data = json.load(file)
-            
-        # Get the 2x2 transition matrix and convert from log probabilities
+
         transition_matrix = np.exp(np.array(model_data["transition_matrix"])[1:3, 1:3])
-        # Convert emission matrix from log probabilities
         emission_matrix = np.exp(np.array(model_data["emission_matrix"]))
-        
-        states = model_data["states"]
-        observations = model_data["observations"]
-        
-        return transition_matrix, emission_matrix, states, observations
-        
+
+        return (
+            transition_matrix,
+            emission_matrix,
+            model_data["states"],
+            model_data["observations"],
+        )
+
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
         return None, None, None, None
-    
-# Creates a visualization showing both state transitions and emission probabilities.
+
+
+@st.cache_data
 def create_hmm_visualization(transition_matrix, emission_matrix, states, observations):
-    dot = Digraph(comment='Hidden Markov Model')
-    dot.attr(rankdir='LR')
-    
-    with dot.subgraph(name='cluster_states') as c:
-        c.attr(rank='same')
+    dot = Digraph(comment="Hidden Markov Model", engine="dot")
+    dot.attr(rankdir="LR", bgcolor="transparent")
+
+    # Enhanced node styling
+    node_styles = {
+        "state": {
+            "shape": "circle",
+            "style": "filled",
+            "fillcolor": "#1f77b4",
+            "fontcolor": "white",
+            "width": "1.5",
+            "penwidth": "2",
+        },
+        "obs": {
+            "shape": "box",
+            "style": "filled",
+            "fillcolor": "#ff7f0e",
+            "fontcolor": "white",
+            "width": "1.5",
+            "penwidth": "2",
+        },
+    }
+
+    with dot.subgraph(name="cluster_states") as c:
+        c.attr(rank="same")
         for state in states:
-            c.node(f"state_{state}", 
-                  state.replace('_', ' ').title(),
-                  shape='circle',
-                  style='filled',
-                  fillcolor='lightblue',
-                  width='1.5')
-    
-    with dot.subgraph(name='cluster_observations') as c:
-        c.attr(rank='same')
+            c.node(
+                f"state_{state}",
+                state.replace("_", " ").title(),
+                **node_styles["state"],
+            )
+
+    with dot.subgraph(name="cluster_observations") as c:
+        c.attr(rank="same")
         for obs in observations:
-            c.node(f"obs_{obs}",
-                  obs.replace('_', ' ').title(),
-                  shape='box',
-                  style='filled',
-                  fillcolor='red',
-                  width='1.5')
-    
-    # Add transition edges between states
+            c.node(f"obs_{obs}", obs.replace("_", " ").title(), **node_styles["obs"])
+
+    # Enhanced edge styling
     for i, from_state in enumerate(states):
         for j, to_state in enumerate(states):
             prob = transition_matrix[i][j]
             if prob > 0.01:
-                prob_label = f"{prob*100:.1f}%"
-                penwidth = str(1 + 2 * prob)
-                dot.edge(f"state_{from_state}",
-                        f"state_{to_state}",
-                        label=prob_label,
-                        penwidth=penwidth)
-    
-    # Add emission edges from states to observations
+                dot.edge(
+                    f"state_{from_state}",
+                    f"state_{to_state}",
+                    label=f"{prob*100:.1f}%",
+                    penwidth=str(1 + 3 * prob),
+                    color="#1f77b4",
+                    fontcolor="#2c3e50",
+                )
+
     for i, state in enumerate(states):
         for j, obs in enumerate(observations):
             prob = emission_matrix[j][i]
             if prob > 0.01:
-                prob_label = f"{prob*100:.1f}%"
-                dot.edge(f"state_{state}",
-                        f"obs_{obs}",
-                        label=prob_label,
-                        style='dashed',
-                        penwidth='1.0')
-    
+                dot.edge(
+                    f"state_{state}",
+                    f"obs_{obs}",
+                    label=f"{prob*100:.1f}%",
+                    style="dashed",
+                    penwidth="1.5",
+                    color="#ff7f0e",
+                    fontcolor="#2c3e50",
+                )
+
     return dot
 
-# Creates a heatmap visualization of probability matrices using plotly.
+
+@st.cache_data
 def create_heatmap(matrix, labels_x, labels_y):
-    fig = px.imshow(matrix,
-                    labels=dict(x="To State", y="From State", color="Probability"),
-                    x=labels_x,
-                    y=labels_y,
-                    color_continuous_scale="Blues")
+    fig = px.imshow(
+        matrix,
+        labels=dict(x="To State", y="From State", color="Probability"),
+        x=labels_x,
+        y=labels_y,
+        color_continuous_scale="RdYlBu_r",
+        aspect="auto",
+    )
+    fig.update_layout(
+        font_family="Arial",
+        font_size=14,
+        margin=dict(l=40, r=40, t=40, b=40),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
     return fig
 
-# Loads NFL game data from a JSON file and returns it as a list of game dictionaries.
+
+@st.cache_data
 def load_nfl_games(file_path: str) -> List[Dict]:
     try:
-        with open(file_path, 'r') as file:
-            games = json.load(file)
-        return games
+        with open(file_path, "r") as file:
+            return json.load(file)
     except Exception as e:
         st.error(f"Error loading NFL games data: {str(e)}")
         return []
-    
-#Extracts a sorted list of unique team names from the games data.
-def get_unique_teams(games: List[Dict]) -> List[str]:
-    # Create a set of all teams (both home and away) and convert to sorted list
-    teams = set()
-    for game in games:
-        teams.add(game['home_team'])
-        teams.add(game['away_team'])
-    return sorted(list(teams))
 
-# Predicts the winner based on transition probabilities.
+
+@st.cache_data
+def get_unique_teams(games: List[Dict]) -> List[str]:
+    return sorted(
+        list(
+            {game["home_team"] for game in games}
+            | {game["away_team"] for game in games}
+        )
+    )
+
+
 def predict_winner(home_team, away_team, transition_matrix, states):
     home_win_prob = transition_matrix[0][0]
     away_win_prob = transition_matrix[1][1]
-    
-    probabilities = {
-        home_team: home_win_prob * 100,
-        away_team: away_win_prob * 100
-    }
-    
+
+    probabilities = {home_team: home_win_prob * 100, away_team: away_win_prob * 100}
+
     winner = home_team if home_win_prob > away_win_prob else away_team
     return winner, probabilities
 
-# Calculates a team's win-loss record from the games data.
+
+@st.cache_data
 def get_team_history(games: List[Dict], team: str) -> Tuple[int, int]:
-    wins = 0
-    losses = 0
-    
+    wins = losses = 0
+
     for game in games:
-        # Check if we have valid scores for this game
         try:
-            home_score = game.get('home_score')
-            away_score = game.get('away_score')
-            
-            # Skip games with missing scores
-            if home_score is None or away_score is None:
+            home_score = game.get("home_score")
+            away_score = game.get("away_score")
+
+            if not (home_score and away_score):
                 continue
-                
-            if game['home_team'] == team:
-                if int(home_score) > int(away_score):
-                    wins += 1
-                elif int(home_score) < int(away_score):
-                    losses += 1
-                # Ties are not counted
-            elif game['away_team'] == team:
-                if int(away_score) > int(home_score):
-                    wins += 1
-                elif int(away_score) < int(home_score):
-                    losses += 1
-                
-        except (TypeError, ValueError) as e:
+
+            is_home = game["home_team"] == team
+            home_won = int(home_score) > int(away_score)
+
+            if is_home:
+                wins += home_won
+                losses += not home_won
+            else:
+                wins += not home_won
+                losses += home_won
+
+        except (TypeError, ValueError):
             continue
-                
+
     return wins, losses
 
-# Creates and displays a table of recent matchups between two teams.
+
 def display_matchup_history(games: List[Dict], home_team: str, away_team: str):
-    matchups = [game for game in games if 
-               (game['home_team'] == home_team and game['away_team'] == away_team) or
-               (game['home_team'] == away_team and game['away_team'] == home_team)]
-    
+    matchups = [
+        g for g in games if {g["home_team"], g["away_team"]} == {home_team, away_team}
+    ]
+
     if matchups:
+        st.markdown(
+            """
+        <style>
+        .matchup-table {
+            font-family: Arial, sans-serif;
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        .matchup-table th {
+            background-color: #1f77b4;
+            color: white;
+            padding: 12px;
+            text-align: left;
+        }
+        .matchup-table td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .matchup-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        </style>
+        """,
+            unsafe_allow_html=True,
+        )
+
         matchup_data = []
         for game in matchups[-5:]:
-            # Handle possible missing scores
             try:
-                home_score = game.get('home_score', 'N/A')
-                away_score = game.get('away_score', 'N/A')
-                
-                if home_score != 'N/A' and away_score != 'N/A':
-                    winner = game['home_team'] if int(home_score) > int(away_score) else game['away_team']
+                home_score = game.get("home_score", "N/A")
+                away_score = game.get("away_score", "N/A")
+
+                if home_score != "N/A" and away_score != "N/A":
+                    winner = (
+                        game["home_team"]
+                        if int(home_score) > int(away_score)
+                        else game["away_team"]
+                    )
                 else:
-                    winner = 'Unknown'
-                    
-                matchup_data.append({
-                    'Date': str(game['date']),
-                    'Home': f"{game['home_team']} ({home_score})",
-                    'Away': f"{game['away_team']} ({away_score})",
-                    'Winner': winner
-                })
+                    winner = "Unknown"
+
+                matchup_data.append(
+                    {
+                        "Date": str(game["date"]),
+                        "Home": f"{game['home_team']} ({home_score})",
+                        "Away": f"{game['away_team']} ({away_score})",
+                        "Winner": winner,
+                    }
+                )
             except (TypeError, ValueError):
                 continue
-        
+
         if matchup_data:
-            st.dataframe(pd.DataFrame(matchup_data))
+            df = pd.DataFrame(matchup_data)
+            st.table(
+                df.style.apply(
+                    lambda x: [
+                        "background-color: #e6f3ff" if i % 2 else ""
+                        for i in range(len(x))
+                    ]
+                )
+            )
         else:
             st.info("No valid matchup data found between these teams")
     else:
         st.info("No recent matchups found between these teams")
 
+
 def main():
-    # Create sidebar navigation
-    st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", 
-                           ["Model Visualization",
-                            "Make Predictions",
-                            "Model Analysis"])
+    st.sidebar.title("🏈 Navigation")
+    page = st.sidebar.radio(
+        "",
+        ["Model Visualization", "Make Predictions", "Model Analysis"],
+        format_func=lambda x: (
+            f"📊 {x}"
+            if x == "Model Analysis"
+            else f"🔮 {x}" if x == "Make Predictions" else f"📈 {x}"
+        ),
+    )
 
     file_path = "model\\saves\\trained_model.json"
-    transition_matrix, emission_matrix, states, observations = load_hmm_model_from_file(file_path)
+    transition_matrix, emission_matrix, states, observations = load_hmm_model_from_file(
+        file_path
+    )
 
-    if all(v is not None for v in [transition_matrix, emission_matrix, states, observations]):
+    if all(
+        v is not None
+        for v in [transition_matrix, emission_matrix, states, observations]
+    ):
         if page == "Model Visualization":
             st.title("Hidden Markov Model Visualization")
-            
-            st.write("""
-            This visualization shows the structure of your Hidden Markov Model:
-            - States (blue circles): Hidden states representing game outcomes
-            - Observations (red boxes): Observable game results
-            - Solid arrows: Transition probabilities between states
-            - Dashed arrows: Emission probabilities from states to observations
-            """)
-            
-            # Display the HMM visualization
-            dot = create_hmm_visualization(transition_matrix, emission_matrix, states, observations)
-            st.graphviz_chart(dot)
-            
-            # Show probability matrices
-            col1, col2 = st.columns(2)
-            with col1:
-                with st.expander("View Transition Probabilities"):
-                    st.subheader("State Transitions (%)")
-                    transition_df = pd.DataFrame(
-                        transition_matrix * 100,
-                        columns=[s.replace('_', ' ').title() for s in states],
-                        index=[s.replace('_', ' ').title() for s in states]
-                    )
-                    st.dataframe(transition_df.round(2))
-            
-            with col2:
-                with st.expander("View Emission Probabilities"):
-                    st.subheader("Emissions (%)")
-                    emission_df = pd.DataFrame(
-                        emission_matrix * 100,
-                        columns=[s.replace('_', ' ').title() for s in states],
-                        index=[o.replace('_', ' ').title() for o in observations]
-                    )
-                    st.dataframe(emission_df.round(2))
 
-        elif page == "Make Predictions":
-            st.title("Predict Game Outcomes")
-            
-            # Load NFL games data
-            games_file_path = "data\\nfl_dataset.json"
-            games = load_nfl_games(games_file_path)
-            
-            if games:
-                teams = get_unique_teams(games)
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.subheader("Home Team")
-                    home_team = st.selectbox(
-                        "Select Home Team",
-                        teams,
-                        key='home_team'
-                    )
-                    
-                    if home_team:
-                        wins, losses = get_team_history(games, home_team)
-                        win_pct = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
-                        st.write(f"Season Record: {wins}-{losses} ({win_pct:.1f}%)")
-                
-                with col2:
-                    st.subheader("Away Team")
-                    away_teams = [team for team in teams if team != home_team]
-                    away_team = st.selectbox(
-                        "Select Away Team",
-                        away_teams,
-                        key='away_team'
-                    )
-                    
-                    if away_team:
-                        wins, losses = get_team_history(games, away_team)
-                        win_pct = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
-                        st.write(f"Season Record: {wins}-{losses} ({win_pct:.1f}%)")
-                
-                # Only display prediction if both teams are selected
-                if home_team and away_team:
-                    # Get prediction using the transition matrix
-                    predicted_winner, probabilities = predict_winner(home_team, away_team, transition_matrix, states)
-                    win_probability = max(probabilities.values())
-                    
-                    # Display the prediction with team name and confidence
-                    st.markdown("---")
-                    winner_color = "green" if predicted_winner == home_team else "red"
-                    st.markdown(f"### The winner will be: <span style='color:{winner_color}'>{predicted_winner}</span> ({win_probability:.1f}% confidence)", unsafe_allow_html=True)
-                    st.markdown("---")
-                    
-                    # Show matchup history below the prediction
-                    st.subheader("Recent Matchups")
-                    display_matchup_history(games, home_team, away_team)
-
-
-        elif page == "Model Analysis":
-            st.title("Model Analysis")
-            
-            # Display heatmaps
-            st.subheader("Transition Probabilities Heatmap")
-            fig = create_heatmap(transition_matrix,
-                               [s.replace('_', ' ').title() for s in states],
-                               [s.replace('_', ' ').title() for s in states])
-            st.plotly_chart(fig)
-            
-            st.subheader("Emission Probabilities Heatmap")
-            fig = create_heatmap(emission_matrix,
-                               [s.replace('_', ' ').title() for s in states],
-                               [o.replace('_', ' ').title() for o in observations])
-            st.plotly_chart(fig)
-            
-            # Model download section
-            st.subheader("Download Model")
-            if st.button("Download Trained Model"):
-                model_data = {
-                    "transition_matrix": transition_matrix.tolist(),
-                    "emission_matrix": emission_matrix.tolist(),
-                    "states": states,
-                    "observations": observations
-                }
-                st.download_button(
-                    label="Download as JSON",
-                    data=json.dumps(model_data, indent=2),
-                    file_name=f"trained_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    mime="application/json"
+            with st.expander("ℹ️ About this visualization", expanded=True):
+                st.markdown(
+                    """
+                This interactive visualization shows the structure of the Hidden Markov Model:
+                - 🔵 **States** (blue circles): Hidden states representing game outcomes
+                - 🟠 **Observations** (orange boxes): Observable game results
+                - ➡️ **Solid arrows**: Transition probabilities between states
+                - ➡️ **Dashed arrows**: Emission probabilities from states to observations
+                """
                 )
 
-    else:
-        st.warning("Unable to load the model. Please check your file path and model format.")
+            dot = create_hmm_visualization(
+                transition_matrix, emission_matrix, states, observations
+            )
+            st.graphviz_chart(dot, use_container_width=True)
 
-    # Add footer information
+            col1, col2 = st.columns(2)
+            with col1:
+                with st.expander("📊 Transition Probabilities"):
+                    transition_df = pd.DataFrame(
+                        transition_matrix * 100,
+                        columns=[s.replace("_", " ").title() for s in states],
+                        index=[s.replace("_", " ").title() for s in states],
+                    )
+                    st.dataframe(
+                        transition_df.style.background_gradient(cmap="Blues").format(
+                            "{:.1f}%"
+                        ),
+                        use_container_width=True,
+                    )
+
+            with col2:
+                with st.expander("📊 Emission Probabilities"):
+                    emission_df = pd.DataFrame(
+                        emission_matrix * 100,
+                        columns=[s.replace("_", " ").title() for s in states],
+                        index=[o.replace("_", " ").title() for o in observations],
+                    )
+                    st.dataframe(
+                        emission_df.style.background_gradient(cmap="Oranges").format(
+                            "{:.1f}%"
+                        ),
+                        use_container_width=True,
+                    )
+
+        elif page == "Make Predictions":
+            st.title("🏈 Game Outcome Predictor")
+
+            games = load_nfl_games("data\\nfl_dataset.json")
+
+            if games:
+                teams = get_unique_teams(games)
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.subheader("🏠 Home Team")
+                    home_team = st.selectbox("Select Home Team", teams, key="home_team")
+
+                    if home_team:
+                        wins, losses = get_team_history(games, home_team)
+                        win_pct = (
+                            (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
+                        )
+                        st.metric(
+                            "Season Record",
+                            f"{wins}-{losses}",
+                            f"{win_pct:.1f}% Win Rate",
+                        )
+
+                with col2:
+                    st.subheader("✈️ Away Team")
+                    away_teams = [team for team in teams if team != home_team]
+                    away_team = st.selectbox(
+                        "Select Away Team", away_teams, key="away_team"
+                    )
+
+                    if away_team:
+                        wins, losses = get_team_history(games, away_team)
+                        win_pct = (
+                            (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
+                        )
+                        st.metric(
+                            "Season Record",
+                            f"{wins}-{losses}",
+                            f"{win_pct:.1f}% Win Rate",
+                        )
+
+                if home_team and away_team:
+                    predicted_winner, probabilities = predict_winner(
+                        home_team, away_team, transition_matrix, states
+                    )
+                    win_probability = max(probabilities.values())
+
+                    st.markdown("---")
+
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col2:
+                        st.markdown(
+                            f"""
+                            <div style='
+                                background-color: {'#e6ffe6' if predicted_winner == home_team else '#ffe6e6'};
+                                padding: 20px;
+                                border-radius: 10px;
+                                text-align: center;
+                                margin: 20px 0;
+                            '>
+                                <h2 style='margin:0; color: {'#006600' if predicted_winner == home_team else '#660000'};'>
+                                    Predicted Winner: {predicted_winner}
+                                </h2>
+                                <p style='font-size: 1.2em; margin: 10px 0;'>
+                                    Confidence: {win_probability:.1f}%
+                                </p>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                    st.markdown("---")
+
+                    st.subheader("📜 Recent Matchup History")
+                    display_matchup_history(games, home_team, away_team)
+
+        elif page == "Model Analysis":
+            st.title("📊 Model Analysis Dashboard")
+
+            st.subheader("State Transition Heatmap")
+            fig = create_heatmap(
+                transition_matrix,
+                [s.replace("_", " ").title() for s in states],
+                [s.replace("_", " ").title() for s in states],
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.subheader("Emission Probabilities Heatmap")
+            fig = create_heatmap(
+                emission_matrix,
+                [s.replace("_", " ").title() for s in states],
+                [o.replace("_", " ").title() for o in observations],
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            with st.expander("💾 Download Model"):
+                if st.button("Prepare Download"):
+                    model_data = {
+                        "transition_matrix": transition_matrix.tolist(),
+                        "emission_matrix": emission_matrix.tolist(),
+                        "states": states,
+                        "observations": observations,
+                    }
+                    st.download_button(
+                        label="📥 Download Model as JSON",
+                        data=json.dumps(model_data, indent=2),
+                        file_name=f"trained_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json",
+                    )
+
+    else:
+        st.error(
+            "Unable to load the model. Please check your file path and model format."
+        )
+
     st.sidebar.markdown("---")
-    st.sidebar.write("Model last updated:", datetime.now().strftime("%Y-%m-%d"))
+    st.sidebar.markdown(
+        f"<div style='text-align: center; color: #666;'>"
+        f"Last Updated: {datetime.now().strftime('%Y-%m-%d')}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
 
 if __name__ == "__main__":
     main()
