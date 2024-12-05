@@ -321,7 +321,7 @@ def display_matchup_history(games: List[Dict], home_team: str, away_team: str):
 
                 matchup_data.append(
                     {
-                        "Date": str(game["date"]),
+                        "Date": datetime.strptime(str(game["date"]), "%Y%m%d").strftime("%m/%d/%Y"),
                         "Home": f"{game['home_team']} ({home_score})",
                         "Away": f"{game['away_team']} ({away_score})",
                         "Winner": winner,
