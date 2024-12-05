@@ -64,6 +64,27 @@ st.markdown(
             width: 75%;
         }
     }
+    .nav-link {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        text-decoration: none;
+        color: #2c3e50;
+        border-radius: 0.5rem;
+        margin-bottom: 0.5rem;
+        transition: all 0.2s;
+    }
+    .nav-link:hover {
+        background-color: #e9ecef;
+    }
+    .nav-link.active {
+        background-color: #1f77b4;
+        color: white;
+    }
+    .nav-icon {
+        margin-right: 0.75rem;
+        font-size: 1.2rem;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -318,19 +339,36 @@ def display_matchup_history(games: List[Dict], home_team: str, away_team: str):
 
 def main():
     st.sidebar.title("🏈 Navigation")
-    page = st.sidebar.radio(
-        "",
-        ["Documentation", "Model Visualization", "Make Predictions", "Model Analysis"],
-        format_func=lambda x: (
-            "📚 Documentation"
-            if x == "Documentation"
-            else (
-                f"📊 {x}"
-                if x == "Model Analysis"
-                else f"🔮 {x}" if x == "Make Predictions" else f"📈 {x}"
-            )
-        ),
-    )
+
+    # Navigation menu items with icons and descriptions
+    nav_items = {
+        "Documentation": {"icon": "📚", "desc": "View project documentation and help"},
+        "Model Visualization": {
+            "icon": "📈",
+            "desc": "Explore the model structure and probabilities",
+        },
+        "Make Predictions": {"icon": "🔮", "desc": "Predict game outcomes"},
+        "Model Analysis": {
+            "icon": "📊",
+            "desc": "Analyze model performance and metrics",
+        },
+    }
+
+    # Create navigation menu
+    for nav_name, nav_info in nav_items.items():
+        if st.sidebar.button(
+            f"{nav_info['icon']} {nav_name}",
+            key=nav_name,
+            help=nav_info["desc"],
+            use_container_width=True,
+        ):
+            st.session_state.page = nav_name
+
+    # Initialize page state if not set
+    if "page" not in st.session_state:
+        st.session_state.page = "Documentation"
+
+    page = st.session_state.page
 
     if page == "Documentation":
         st.markdown(readme_content)
