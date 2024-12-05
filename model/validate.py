@@ -54,7 +54,7 @@ class ModelValidator:
             validation_data = json.load(f)
             self.validation_data = validation_data["data"]
 
-    def predict(self, home_team: str, away_team: str) -> str:
+    def predict(self, home_team: str, away_team: str, provide_confidence: bool = False):
         """Predict winner based on team names."""
         if self.hmm is None:
             raise ValueError("Must load model before predicting")
@@ -78,14 +78,21 @@ class ModelValidator:
         home_likelihood = self.hmm.emission_matrix[obs_idx][home_state_idx]
         away_likelihood = self.hmm.emission_matrix[obs_idx][away_state_idx]
 
+        total_likelihood = home_likelihood + away_likelihood
+        confidence = max(home_likelihood, away_likelihood) / total_likelihood * 100
+
         model_prediction = (
             "home_win" if home_likelihood > away_likelihood else "away_win"
         )
-        return (
+        final_prediction = (
             model_prediction
             if strategy == "tail"
             else ("away_win" if model_prediction == "home_win" else "home_win")
         )
+
+        if provide_confidence:
+            return final_prediction, confidence
+        return final_prediction
 
     def validate(self):
         if self.hmm is None or self.validation_data is None:

@@ -8,6 +8,7 @@ import plotly.express as px
 from datetime import datetime
 from typing import List, Dict, Tuple
 from functools import lru_cache
+from model.validate import ModelValidator
 
 # Configure page and styling
 st.set_page_config(
@@ -189,13 +190,20 @@ def get_unique_teams(games: List[Dict]) -> List[str]:
     )
 
 
-def predict_winner(home_team, away_team, transition_matrix, states):
-    home_win_prob = transition_matrix[0][0]
-    away_win_prob = transition_matrix[1][1]
+def predict_winner(home_team, away_team):
+    validator = ModelValidator()
+    validator.load_model()
+    validator.load_validation_data()
+    prediction, confidence = validator.predict(
+        home_team, away_team, provide_confidence=True
+    )
 
-    probabilities = {home_team: home_win_prob * 100, away_team: away_win_prob * 100}
+    probabilities = {
+        home_team: confidence if prediction == "home_win" else 0,
+        away_team: confidence if prediction == "away_win" else 0,
+    }
 
-    winner = home_team if home_win_prob > away_win_prob else away_team
+    winner = home_team if prediction == "home_win" else away_team
     return winner, probabilities
 
 
@@ -212,14 +220,16 @@ def get_team_history(games: List[Dict], team: str) -> Tuple[int, int]:
                 continue
 
             is_home = game["home_team"] == team
+            is_away = game["away_team"] == team
             home_won = int(home_score) > int(away_score)
+            away_won = not home_won
 
             if is_home:
                 wins += home_won
                 losses += not home_won
-            else:
-                wins += not home_won
-                losses += home_won
+            elif is_away:
+                wins += away_won
+                losses += not away_won
 
         except (TypeError, ValueError):
             continue
@@ -243,7 +253,6 @@ def display_matchup_history(games: List[Dict], home_team: str, away_team: str):
             margin: 1rem 0;
         }
         .matchup-table th {
-            background-color: #1f77b4;
             color: white;
             padding: 12px;
             text-align: left;
@@ -251,9 +260,6 @@ def display_matchup_history(games: List[Dict], home_team: str, away_team: str):
         .matchup-table td {
             padding: 10px;
             border-bottom: 1px solid #ddd;
-        }
-        .matchup-table tr:hover {
-            background-color: #f5f5f5;
         }
         </style>
         """,
@@ -288,14 +294,7 @@ def display_matchup_history(games: List[Dict], home_team: str, away_team: str):
 
         if matchup_data:
             df = pd.DataFrame(matchup_data)
-            st.table(
-                df.style.apply(
-                    lambda x: [
-                        "background-color: #e6f3ff" if i % 2 else ""
-                        for i in range(len(x))
-                    ]
-                )
-            )
+            st.table(df)
         else:
             st.info("No valid matchup data found between these teams")
     else:
@@ -383,7 +382,12 @@ def main():
 
                 with col1:
                     st.subheader("🏠 Home Team")
-                    home_team = st.selectbox("Select Home Team", teams, key="home_team")
+                    home_team = st.selectbox(
+                        "Select Home Team",
+                        teams,
+                        key="home_team",
+                        on_change=lambda: st.session_state.pop("prediction", None),
+                    )
 
                     if home_team:
                         wins, losses = get_team_history(games, home_team)
@@ -400,7 +404,10 @@ def main():
                     st.subheader("✈️ Away Team")
                     away_teams = [team for team in teams if team != home_team]
                     away_team = st.selectbox(
-                        "Select Away Team", away_teams, key="away_team"
+                        "Select Away Team",
+                        away_teams,
+                        key="away_team",
+                        on_change=lambda: st.session_state.pop("prediction", None),
                     )
 
                     if away_team:
@@ -415,9 +422,14 @@ def main():
                         )
 
                 if home_team and away_team:
-                    predicted_winner, probabilities = predict_winner(
-                        home_team, away_team, transition_matrix, states
-                    )
+                    if "prediction" not in st.session_state:
+                        predicted_winner, probabilities = predict_winner(
+                            home_team, away_team
+                        )
+                        st.session_state.prediction = (predicted_winner, probabilities)
+                    else:
+                        predicted_winner, probabilities = st.session_state.prediction
+
                     win_probability = max(probabilities.values())
 
                     st.markdown("---")
@@ -428,7 +440,7 @@ def main():
                             f"""
                             <div style='
                                 background-color: {'#e6ffe6' if predicted_winner == home_team else '#ffe6e6'};
-                                padding: 20px;
+                                padding: 10px;
                                 border-radius: 10px;
                                 text-align: center;
                                 margin: 20px 0;
@@ -436,7 +448,7 @@ def main():
                                 <h2 style='margin:0; color: {'#006600' if predicted_winner == home_team else '#660000'};'>
                                     Predicted Winner: {predicted_winner}
                                 </h2>
-                                <p style='font-size: 1.2em; margin: 10px 0;'>
+                                <p style='font-size: 1.2em; margin: 10px 0; color: {'#006600' if predicted_winner == home_team else '#660000'};'>
                                     Confidence: {win_probability:.1f}%
                                 </p>
                             </div>
@@ -452,21 +464,25 @@ def main():
         elif page == "Model Analysis":
             st.title("📊 Model Analysis Dashboard")
 
-            st.subheader("State Transition Heatmap")
-            fig = create_heatmap(
-                transition_matrix,
-                [s.replace("_", " ").title() for s in states],
-                [s.replace("_", " ").title() for s in states],
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            col1, col2 = st.columns(2)
 
-            st.subheader("Emission Probabilities Heatmap")
-            fig = create_heatmap(
-                emission_matrix,
-                [s.replace("_", " ").title() for s in states],
-                [o.replace("_", " ").title() for o in observations],
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            with col1:
+                with st.expander("State Transition Heatmap", expanded=True):
+                    fig = create_heatmap(
+                        transition_matrix,
+                        [s.replace("_", " ").title() for s in states],
+                        [s.replace("_", " ").title() for s in states],
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+            with col2:
+                with st.expander("Emission Probabilities Heatmap", expanded=True):
+                    fig = create_heatmap(
+                        emission_matrix,
+                        [s.replace("_", " ").title() for s in states],
+                        [o.replace("_", " ").title() for o in observations],
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
 
             with st.expander("💾 Download Model"):
                 if st.button("Prepare Download"):
